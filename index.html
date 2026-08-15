@@ -1222,19 +1222,14 @@ window.saveScore = async function(id){
 
 
   const {
-    error
-  } = await sb
-    .from("matches")
-    .upsert(
-      {
-        game_id:id,
-        home_score:a,
-        away_score:b
-      },
-      {
-        onConflict:"game_id"
-      }
-    );
+  error
+} = await sb
+  .from("matches")
+  .update({
+    home_score:a,
+    away_score:b
+  })
+  .eq("game_id", id);
 
 
   if(error){
