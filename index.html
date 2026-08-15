@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quadrangular de Futsal</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:#f4f6f8;color:#17202a}
+header{background:linear-gradient(135deg,#111827,#263449);color:#fff;padding:28px 18px}.wrap{max-width:1100px;margin:auto}
+.brand{display:flex;justify-content:space-between;align-items:end;gap:16px}.brand h1{margin:0;font-size:clamp(25px,5vw,42px)}.brand p{margin:6px 0 0;color:#cbd5e1}
+.tabs{display:flex;gap:8px;margin-top:20px;flex-wrap:wrap}.tab{border:0;border-radius:999px;padding:10px 18px;background:#ffffff18;color:#fff;font-weight:700;cursor:pointer}.tab.active{background:#fff;color:#111827}
+main{padding:24px 18px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.card{background:#fff;border-radius:18px;padding:18px;box-shadow:0 8px 25px #0f172a0d}.card h2{margin:0 0 14px}
+table{width:100%;border-collapse:collapse}th,td{text-align:center;padding:10px 7px;border-bottom:1px solid #e5e7eb;font-size:14px}th{font-size:12px;color:#64748b;text-transform:uppercase}td:first-child,th:first-child{text-align:left}.rank{font-weight:900}.leader{background:#f0fdf4}.finalist{background:#eff6ff}
+.muted{color:#64748b;font-size:13px}.badge{font-size:12px;font-weight:800;padding:5px 8px;border-radius:8px;background:#eef2ff;color:#3730a3}
+.next{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid #e5e7eb}.next:last-child{border-bottom:0}
+.games{display:grid;gap:10px}.game{display:grid;grid-template-columns:95px 1fr 110px 1fr 90px;align-items:center;gap:10px;padding:12px;border:1px solid #e5e7eb;border-radius:12px}.game.final{border:2px solid #c7d2fe}.team{text-align:center;font-weight:700}.score{font-weight:900;font-size:20px;text-align:center}.admin{background:#0f172a;color:#fff}.admin .game{border-color:#334155}.admin input{width:48px;text-align:center}.admin button,.save-config{background:#fff;color:#111827;border:0;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer}
+.setup{display:grid;gap:10px}.setup input{padding:10px;border-radius:9px;border:1px solid #cbd5e1}.status{margin-top:8px;font-weight:700}
+footer{text-align:center;padding:30px;color:#64748b;font-size:13px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.brand{align-items:start;flex-direction:column}.game{grid-template-columns:70px 1fr 90px 1fr 70px;font-size:13px}}
+@media(max-width:520px){.game{grid-template-columns:1fr 70px 1fr}.game .date,.game .phase{grid-column:1/-1;text-align:center}.team{font-size:13px}}
+</style></head>
+<body>
+<header><div class="wrap">
+<div class="brand"><div><h1>🏆 Quadrangular de Futsal</h1><p>Liga das Engenharias • Med UFG • Med PUC • Med UniRV</p></div><div id="statusTop" class="muted">Conectando...</div></div>
+<div class="tabs"><button class="tab active" data-cat="F">👩 Feminino</button><button class="tab" data-cat="M">👨 Masculino</button></div>
+</div></header>
+<main class="wrap">
+<section id="setupCard" class="card" style="margin-bottom:18px;display:none"><h2>⚙️ Configurar banco de dados</h2>
+<p class="muted">Cole abaixo a URL e a chave pública (anon) do seu projeto Supabase. Elas ficam no navegador; nunca coloque uma chave service_role aqui.</p>
+<div class="setup"><input id="url" placeholder="https://seu-projeto.supabase.co"><input id="anon" placeholder="chave anon pública"><button class="save-config" onclick="saveConfig()">Conectar</button></div><div id="setupStatus" class="status"></div></section>
+<div class="grid">
+<section class="card"><h2>📊 Classificação</h2><div id="standings"></div></section>
+<section class="card"><h2>⏭️ Próximos jogos</h2><div id="upcoming"></div></section>
+</div>
+<section class="card" style="margin-top:18px"><h2>⚽ Jogos</h2><div id="games" class="games"></div></section>
+<section class="card admin" style="margin-top:18px"><h2>🔐 Atualizar placares</h2><p class="muted">O placar salvo aqui é gravado no banco e fica disponível para todos que acessarem o site.</p><div id="adminGames" class="games"></div></section>
+</main><footer>Placar online • Supabase • atualização em tempo real</footer>
+<script>
+const teams=["Liga das Engenharias","Med UFG","Med PUC","Med UniRV"];
+const times=["08:00","08:50","09:40","10:30","11:20","12:10","13:40","14:30","15:20","16:10","17:00","17:50","18:50","19:40"];
+const pairings=[[0,2],[1,3],[0,1],[2,3],[0,3],[2,1]];
+let cat="F", sb=null, rows=[];
+const SUPABASE_URL = "https://wwncdtmrwadijvlzytwy.supabase.co";
+const SUPABASE_KEY = "sb_publishable_fu31rcRA1R1_ZGmIv2AcJg_f6x8TsEn";
+const saved = {url: SUPABASE_URL, anon: SUPABASE_KEY};
+
+function buildGames(){
+ let arr=[];
+ for(const c of ["F","M"]){
+   for(let i=0;i<6;i++) arr.push({id:c+(i+1),cat:c,stage:"Classificatória",a:pairings[i][0],b:pairings[i][1],time:times[i*2+(c==="M"?1:0)]});
+   arr.push({id:c+"7",cat:c,stage:"FINAL",a:null,b:null,time:c==="F"?"18:50":"19:40"});
+ }
+ return arr;
+}
+const games=buildGames();
+function catGames(){return games.filter(g=>g.cat===cat)}
+function scoreFor(id){return rows.find(r=>r.game_id===id)}
+function completed(g){let r=scoreFor(g.id);return r&&Number.isInteger(r.home_score)&&Number.isInteger(r.away_score)}
+function standings(){
+ const s=teams.map(name=>({name,J:0,V:0,E:0,D:0,GP:0,GC:0,P:0}));
+ catGames().filter(g=>g.stage!=="FINAL"&&completed(g)).forEach(g=>{
+  const r=scoreFor(g.id),x=s[g.a],y=s[g.b],a=r.home_score,b=r.away_score;
+  x.J++;y.J++;x.GP+=a;x.GC+=b;y.GP+=b;y.GC+=a;
+  if(a>b){x.V++;y.D++;x.P+=3}else if(a<b){y.V++;x.D++;y.P+=3}else{x.E++;y.E++;x.P++;y.P++}
+ });
+ s.forEach(x=>x.SG=x.GP-x.GC);
+ s.sort((a,b)=>b.P-a.P||b.SG-a.SG||b.GP-a.GP);
+ return s;
+}
+function finalTeams(){const s=standings();return [teams.indexOf(s[0]?.name),teams.indexOf(s[1]?.name)]}
+function render(){
+ const s=standings(),ft=finalTeams();
+ document.getElementById("standings").innerHTML=`<table><thead><tr><th>#</th><th>Equipe</th><th>J</th><th>V</th><th>E</th><th>D</th><th>SG</th><th>Pts</th></tr></thead><tbody>${s.map((x,i)=>`<tr class="${i===0?'leader ':''}${i<2?'finalist':''}"><td class="rank">${i+1}</td><td>${x.name}</td><td>${x.J}</td><td>${x.V}</td><td>${x.E}</td><td>${x.D}</td><td>${x.SG}</td><td><b>${x.P}</b></td></tr>`).join("")}</tbody></table><p class="muted">Desempate: pontos → saldo de gols → gols marcados.</p>`;
+ const gs=catGames();
+ const label=g=>{if(g.stage!=="FINAL")return [teams[g.a],teams[g.b]];return [ft[0]>=0?teams[ft[0]]:"1º colocado",ft[1]>=0?teams[ft[1]]:"2º colocado"]};
+ document.getElementById("games").innerHTML=gs.map(g=>{let [a,b]=label(g),r=scoreFor(g.id);return `<div class="game ${g.stage==='FINAL'?'final':''}"><div class="date"><b>${g.time}</b><br><span class="muted">${g.stage}</span></div><div class="team">${a}</div><div class="score">${r?`${r.home_score} × ${r.away_score}`:"—"}</div><div class="team">${b}</div><div class="phase">${g.stage==="FINAL"?"🏆 Final":"Jogo"}</div></div>`}).join("");
+ document.getElementById("upcoming").innerHTML=gs.filter(g=>!completed(g)).slice(0,4).map(g=>{let [a,b]=label(g);return `<div class="next"><div><b>${a} × ${b}</b><br><span class="muted">${g.time} • ${g.stage}</span></div><span class="badge">${g.stage==="FINAL"?"🏆 FINAL":"PRÓXIMO"}</span></div>`}).join("")||"<p>Todos os jogos encerrados.</p>";
+ document.getElementById("adminGames").innerHTML=gs.map(g=>{let [a,b]=label(g),r=scoreFor(g.id);return `<div class="game"><div class="date"><b>${g.time}</b><br><span class="muted">${g.stage}</span></div><div class="team">${a}</div><div class="score"><input type="number" min="0" id="a-${g.id}" value="${r?.home_score??""}"> × <input type="number" min="0" id="b-${g.id}" value="${r?.away_score??""}"></div><div class="team">${b}</div><button onclick="saveScore('${g.id}')">Salvar</button></div>`}).join("");
+}
+async function load(){
+ if(!sb){render();return}
+ const {data,error}=await sb.from("matches").select("*").order("game_id");
+ if(error){document.getElementById("statusTop").textContent="Erro no banco";console.error(error);return}
+ rows=data||[];document.getElementById("statusTop").textContent="🟢 Online";render();
+}
+window.saveScore=async function(id){
+ if(!sb)return alert("Configure o Supabase primeiro.");
+ const a=parseInt(document.getElementById("a-"+id).value),b=parseInt(document.getElementById("b-"+id).value);
+ if(!Number.isInteger(a)||a<0||!Number.isInteger(b)||b<0)return alert("Digite dois placares válidos.");
+ const {error}=await sb.from("matches").upsert({game_id:id,home_score:a,away_score:b},{onConflict:"game_id"});
+ if(error)alert("Erro ao salvar: "+error.message); else await load();
+}
+window.saveConfig=function(){
+ const url=document.getElementById("url").value.trim(),anon=document.getElementById("anon").value.trim();
+ if(!url||!anon)return;
+ localStorage.setItem(configKey,JSON.stringify({url,anon}));
+ init(url,anon);
+}
+async function init(url,anon){
+ try{sb=window.supabase.createClient(url,anon);document.getElementById("setupCard").style.display="none";
+ const channel=sb.channel("scores").on("postgres_changes",{event:"*",schema:"public",table:"matches"},payload=>load()).subscribe();
+ await load();
+ }catch(e){document.getElementById("setupStatus").textContent="Não foi possível conectar.";console.error(e)}
+}
+document.querySelectorAll(".tab").forEach(x=>x.onclick=()=>{document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));x.classList.add("active");cat=x.dataset.cat;render()});
+init(saved.url,saved.anon);
+</script></body></html>
